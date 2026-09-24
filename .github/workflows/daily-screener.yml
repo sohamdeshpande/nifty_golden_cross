@@ -1,0 +1,71 @@
+name: Daily 50/200 DMA screener
+
+on:
+  schedule:
+    # 02:30 UTC = 08:00 IST, Mon-Fri. GitHub can delay scheduled runs (often
+    # 15-30 min under load), so treat 08:00 as approximate. Weekends skipped:
+    # markets are closed, so they would only re-process Friday's data.
+    - cron: "30 2 * * 1-5"
+  workflow_dispatch: {}
+
+# Runs only on schedule + manual dispatch above, never on pull_request, so a
+# fork/PR can never trigger this workflow or reach the Telegram secrets.
+permissions:
+  contents: write # commit state/ (trend + roe cache)
+  pages: write # publish the dashboard
+  id-token: write # required by actions/deploy-pages
+
+concurrency:
+  group: screener
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30 # ~100 ROE scrapes x 8s ~= 14 min + price fetch
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install --quiet --upgrade screenercli yfinance pandas matplotlib requests
+
+      - name: Run screener (writes daily_report.csv + site/index.html, sends Telegram)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python daily_screener.py
+
+      # always(): state is written right after a successful alert, so commit it
+      # even if a later step fails - otherwise the next run repeats today's alert.
+      - name: Commit state
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state/ 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "No state change"
+          else
+            git commit -m "state: $(date -u +%F)"
+            git pull --rebase --autostash
+            git push
+          fi
+
+      - name: Upload dashboard artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

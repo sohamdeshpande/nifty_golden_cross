@@ -1,0 +1,7 @@
+state/
+site/
+daily_report.csv
+sample_dashboard.html
+__pycache__/
+*.pyc
+.venv/
