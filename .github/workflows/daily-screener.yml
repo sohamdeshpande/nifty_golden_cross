@@ -5,7 +5,7 @@ on:
     # 02:30 UTC = 08:00 IST, Mon-Fri. GitHub can delay scheduled runs (often
     # 15-30 min under load), so treat 08:00 as approximate. Weekends skipped:
     # markets are closed, so they would only re-process Friday's data.
-    - cron: "30 2 * * 1-5"
+    - cron: "0 1 * * 1-5"
   workflow_dispatch: {}
 
 # Runs only on schedule + manual dispatch above, never on pull_request, so a
